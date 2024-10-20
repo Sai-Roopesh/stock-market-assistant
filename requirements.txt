@@ -7,3 +7,6 @@ newsapi-python
 scikit-learn
 python-dotenv
 streamlit
+openai
+plotly
+seaborn

@@ -31,7 +31,7 @@ st.sidebar.header('🔍 User Input Parameters')
 def get_user_input():
     stock_symbol = st.sidebar.text_input('Stock Symbol', 'AAPL').upper()
     start_date = st.sidebar.date_input(
-        'Start Date', datetime.today() - timedelta(days=30))
+        'Start Date', datetime.today() - timedelta(days=10))
     end_date = st.sidebar.date_input('End Date', datetime.today())
     return stock_symbol, start_date, end_date
 
