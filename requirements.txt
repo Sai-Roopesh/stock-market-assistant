@@ -10,3 +10,4 @@ streamlit
 openai
 plotly
 seaborn
+nltk
