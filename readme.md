@@ -2,6 +2,8 @@
 
 Welcome to the **Advanced Stock Insights Dashboard**! This powerful Streamlit application provides comprehensive stock analysis, combining financial data, technical indicators, news sentiment, and AI-driven insights to help you make informed investment decisions.
 
+check it out here:- https://stock-market-assistant-analysis.streamlit.app/
+
 ## Table of Contents
 
 - [📈 Advanced Stock Insights Dashboard](#-advanced-stock-insights-dashboard)
@@ -25,10 +27,6 @@ Welcome to the **Advanced Stock Insights Dashboard**! This powerful Streamlit ap
 - **AI-Powered Insights**: Generates comprehensive analysis and outlooks using OpenAI's GPT models.
 - **Interactive Visualizations**: Provides dynamic and interactive charts using Plotly for in-depth data exploration.
 - **User-Friendly Interface**: Intuitive sidebar for customizing analysis parameters and easy navigation.
-
-## 🚀 Demo
-
-![Dashboard Screenshot](./screenshots/dashboard.png)
 
 _Note: Replace the above image path with actual screenshots of your application._
 
