@@ -39,10 +39,14 @@ A Streamlit-based dashboard that provides insights into stocks by fetching histo
 
    **Using Conda**:
 
-   Install the packages available on `conda-forge`:
+   Install the packages available on `conda-forge` and `pip`:
 
    ```bash
-   conda install -c conda-forge yfinance pandas matplotlib streamlit scikit-learn python-dotenv newsapi-python
+   pip install -r requirements.txt
+   ```
+
+   ```bash
+   conda install -c conda-forge yfinance
    ```
 
 4. **Set up the environment variables:**
