@@ -1,5 +1,4 @@
-#streamlit deployed
-
+# for deployment
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -22,10 +21,9 @@ from nltk.sentiment.vader import SentimentIntensityAnalyzer
 nltk.download('vader_lexicon')
 
 
-
 # Get API Keys from environment variables
-NEWSAPI_KEY = os.getenv('NEWSAPI_KEY')
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+NEWSAPI_KEY = st.secrets["NEWSAPI_KEY"]
+OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 
 # Validate API keys
 if not NEWSAPI_KEY:
@@ -41,7 +39,8 @@ newsapi = NewsApiClient(api_key=NEWSAPI_KEY)
 client = OpenAI(api_key=OPENAI_API_KEY)  # Use the new OpenAI client instance
 
 # Streamlit App Configuration
-st.set_page_config(layout="wide", page_title="Advanced Stock Analysis Dashboard")
+st.set_page_config(
+    layout="wide", page_title="Advanced Stock Analysis Dashboard")
 
 # Custom CSS
 st.markdown("""
@@ -63,8 +62,10 @@ st.title('📈 Advanced Stock Insights Dashboard')
 # Sidebar Configuration
 st.sidebar.header('🔍 Analysis Parameters')
 
+
 def get_user_input():
-    company_input = st.sidebar.text_input('Company Name or Stock Symbol', 'Apple Inc.')
+    company_input = st.sidebar.text_input(
+        'Company Name or Stock Symbol', 'Apple Inc.')
 
     # Date range selection with preset options
     date_ranges = {
@@ -76,11 +77,12 @@ def get_user_input():
         'Custom': 0
     }
 
-    selected_range = st.sidebar.selectbox('Select Time Range', list(date_ranges.keys()))
+    selected_range = st.sidebar.selectbox(
+        'Select Time Range', list(date_ranges.keys()))
 
     if selected_range == 'Custom':
-        start_date = st.sidebar.date_input('Start Date', 
-                                         datetime.today() - timedelta(days=30))
+        start_date = st.sidebar.date_input('Start Date',
+                                           datetime.today() - timedelta(days=30))
         end_date = st.sidebar.date_input('End Date', datetime.today())
     else:
         end_date = datetime.today()
@@ -93,8 +95,9 @@ def get_user_input():
     show_macd = st.sidebar.checkbox('Show MACD', True)
     show_bollinger = st.sidebar.checkbox('Show Bollinger Bands', True)
 
-    return (company_input, start_date, end_date, 
+    return (company_input, start_date, end_date,
             show_sma, show_rsi, show_macd, show_bollinger)
+
 
 def get_stock_symbol(company_name):
     """Use OpenAI API to get the stock symbol for a given company name."""
@@ -120,18 +123,22 @@ def get_stock_symbol(company_name):
         st.error(f"Error getting stock symbol: {e}")
         return None
 
+
 # Get user inputs
-(company_input, start_date, end_date, 
+(company_input, start_date, end_date,
  show_sma, show_rsi, show_macd, show_bollinger) = get_user_input()
 
 # Convert company name to stock symbol
 with st.spinner('Converting company name to stock symbol...'):
     stock_symbol = get_stock_symbol(company_input)
     if stock_symbol is None:
-        st.error(f"Could not find a stock symbol for '{company_input}'. Please check the company name and try again.")
+        st.error(
+            f"Could not find a stock symbol for '{company_input}'. Please check the company name and try again.")
         st.stop()
 
 # Technical Analysis Functions
+
+
 def calculate_technical_indicators(data):
     """Calculate comprehensive technical indicators"""
     df = data.copy()
@@ -176,6 +183,7 @@ def calculate_technical_indicators(data):
 
     return df
 
+
 def analyze_patterns(data):
     """Analyze trading patterns and signals"""
     patterns = []
@@ -185,10 +193,10 @@ def analyze_patterns(data):
         return patterns
 
     # Moving Average Crossovers
-    if (data['SMA_20'].iloc[-1] > data['SMA_50'].iloc[-1] and 
-        data['SMA_20'].iloc[-2] <= data['SMA_50'].iloc[-2]):
+    if (data['SMA_20'].iloc[-1] > data['SMA_50'].iloc[-1] and
+            data['SMA_20'].iloc[-2] <= data['SMA_50'].iloc[-2]):
         patterns.append("Golden Cross detected (bullish)")
-    elif (data['SMA_20'].iloc[-1] < data['SMA_50'].iloc[-1] and 
+    elif (data['SMA_20'].iloc[-1] < data['SMA_50'].iloc[-1] and
           data['SMA_20'].iloc[-2] >= data['SMA_50'].iloc[-2]):
         patterns.append("Death Cross detected (bearish)")
 
@@ -200,23 +208,27 @@ def analyze_patterns(data):
         patterns.append(f"Oversold conditions (RSI: {current_rsi:.2f})")
 
     # MACD Signals
-    if (data['MACD'].iloc[-1] > data['Signal_Line'].iloc[-1] and 
-        data['MACD'].iloc[-2] <= data['Signal_Line'].iloc[-2]):
+    if (data['MACD'].iloc[-1] > data['Signal_Line'].iloc[-1] and
+            data['MACD'].iloc[-2] <= data['Signal_Line'].iloc[-2]):
         patterns.append("MACD bullish crossover")
-    elif (data['MACD'].iloc[-1] < data['Signal_Line'].iloc[-1] and 
+    elif (data['MACD'].iloc[-1] < data['Signal_Line'].iloc[-1] and
           data['MACD'].iloc[-2] >= data['Signal_Line'].iloc[-2]):
         patterns.append("MACD bearish crossover")
 
     # Bollinger Band Signals
     last_close = data['Close'].iloc[-1]
     if last_close > data['BB_upper'].iloc[-1]:
-        patterns.append("Price above upper Bollinger Band (potential reversal)")
+        patterns.append(
+            "Price above upper Bollinger Band (potential reversal)")
     elif last_close < data['BB_lower'].iloc[-1]:
-        patterns.append("Price below lower Bollinger Band (potential reversal)")
+        patterns.append(
+            "Price below lower Bollinger Band (potential reversal)")
 
     return patterns
 
 # Data Loading Functions
+
+
 @st.cache_data(show_spinner=False)
 def load_stock_data(symbol, start, end):
     try:
@@ -229,6 +241,7 @@ def load_stock_data(symbol, start, end):
         st.error(f"Error fetching data for {symbol}: {e}")
         return None
 
+
 @st.cache_data(show_spinner=False)
 def load_stock_info(symbol):
     try:
@@ -239,13 +252,15 @@ def load_stock_info(symbol):
         st.error(f"Error fetching stock info: {e}")
         return None
 
+
 # Load Data
 with st.spinner('Fetching market data...'):
     stock_data = load_stock_data(stock_symbol, start_date, end_date)
     stock_info = load_stock_info(stock_symbol)
 
 if stock_data is None:
-    st.error(f"No data found for {stock_symbol}. Please check the symbol and try again.")
+    st.error(
+        f"No data found for {stock_symbol}. Please check the symbol and try again.")
     st.stop()
 
 # Calculate Technical Indicators
@@ -379,6 +394,8 @@ else:
     st.write("No significant patterns detected in the current timeframe.")
 
 # News Section with Sentiment Analysis
+
+
 @st.cache_data(show_spinner=False)
 def load_news(ticker, from_date, to_date):
     try:
@@ -394,6 +411,7 @@ def load_news(ticker, from_date, to_date):
     except Exception as e:
         st.error(f"Error fetching news: {e}")
         return []
+
 
 def analyze_sentiment(articles):
     """Perform sentiment analysis on news articles."""
@@ -415,6 +433,7 @@ def analyze_sentiment(articles):
 
     return articles, avg_sentiment
 
+
 st.subheader("📰 Latest News & Sentiment Analysis")
 
 # Load News Articles
@@ -429,7 +448,8 @@ if avg_sentiment > 0.05:
 elif avg_sentiment < -0.05:
     sentiment_label = "Negative 😞"
 
-st.write(f"**Overall News Sentiment:** {sentiment_label} (Score: {avg_sentiment:.2f})")
+st.write(
+    f"**Overall News Sentiment:** {sentiment_label} (Score: {avg_sentiment:.2f})")
 
 if news_articles:
     for article in news_articles:
@@ -443,7 +463,8 @@ if news_articles:
             sentiment_text = "Negative 😞"
 
         # Generate summary
-        article_text = article.get('description') or article.get('content') or ''
+        article_text = article.get(
+            'description') or article.get('content') or ''
         summary = article_text  # Default summary is the description
 
         # Generate AI summary if OpenAI API is available
@@ -470,8 +491,10 @@ if news_articles:
             summary = summarize_article(article_text)
 
         st.markdown(f"### {article['title']}")
-        st.write(f"**Sentiment:** {sentiment_text} (Score: {sentiment_score:.2f})")
-        st.write(f"**Source:** {article['source']['name']}  |  **Published At:** {article['publishedAt']}")
+        st.write(
+            f"**Sentiment:** {sentiment_text} (Score: {sentiment_score:.2f})")
+        st.write(
+            f"**Source:** {article['source']['name']}  |  **Published At:** {article['publishedAt']}")
         st.write(f"**Summary:** {summary}")
         st.write(f"[Read more...]({article['url']})")
         st.markdown("---")
@@ -479,6 +502,8 @@ else:
     st.write('No news articles found for this date range.')
 
 # AI Insights Generation
+
+
 def generate_ai_insights(symbol, data, articles, patterns, stock_info, avg_sentiment):
     """Enhanced AI insights generation with sentiment analysis"""
     # Prepare technical analysis summary
@@ -503,7 +528,8 @@ def generate_ai_insights(symbol, data, articles, patterns, stock_info, avg_senti
     ])
 
     # Prepare patterns
-    pattern_summary = ', '.join(patterns) if patterns else 'No significant patterns detected'
+    pattern_summary = ', '.join(
+        patterns) if patterns else 'No significant patterns detected'
 
     # Include sentiment in the prompt
     sentiment_label = "neutral"
@@ -544,6 +570,7 @@ Based on the above data, market trends, and news sentiment, provide insights and
     except openai.OpenAIError as e:
         return f"AI analysis not available due to an error: {e}"
 
+
 # Generate and Display AI Insights
 st.subheader("🤖 AI-Powered Analysis and Outlook")
 
@@ -583,6 +610,8 @@ Provide a concise and informative answer.
             st.error(f"Error generating answer: {e}")
 
 # Risk Assessment Analysis
+
+
 def generate_risk_assessment(symbol, data, avg_sentiment):
     """Generate a risk assessment for the stock."""
     volatility = data['Volatility'].iloc[-1]
@@ -610,10 +639,12 @@ Consider market conditions, volatility, and news sentiment in your assessment.
     except openai.OpenAIError as e:
         return f"Risk assessment not available due to an error: {e}"
 
+
 # Display Risk Assessment
 st.subheader("⚠️ Risk Assessment")
 
 with st.spinner('Generating risk assessment...'):
-    risk_assessment = generate_risk_assessment(stock_symbol, tech_data, avg_sentiment)
+    risk_assessment = generate_risk_assessment(
+        stock_symbol, tech_data, avg_sentiment)
 
 st.write(risk_assessment)

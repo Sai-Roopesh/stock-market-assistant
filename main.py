@@ -16,6 +16,7 @@ from bs4 import BeautifulSoup
 import seaborn as sns
 import nltk
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
+from dotenv import load_dotenv
 
 # Load NLTK data
 nltk.download('vader_lexicon')
