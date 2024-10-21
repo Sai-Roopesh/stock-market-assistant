@@ -105,7 +105,7 @@ def get_stock_symbol(company_name):
 
     try:
         response = client.chat.completions.create(
-            model="GPT-4o",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": "You are a financial assistant that knows stock ticker symbols."},
                 {"role": "user", "content": prompt}
