@@ -116,7 +116,7 @@ def get_stock_symbol(company_name):
         if data.empty:
             return None
         return symbol
-    except openai.error.OpenAIError as e:
+    except openai.OpenAIError as e:
         st.error(f"Error getting stock symbol: {e}")
         return None
 
@@ -463,7 +463,7 @@ if news_articles:
                 )
                 summary = response.choices[0].message.content.strip()
                 return summary
-            except openai.error.OpenAIError as e:
+            except openai.OpenAIError as e:
                 return "Summary not available."
 
         with st.spinner('Summarizing article...'):
@@ -541,7 +541,7 @@ Based on the above data, market trends, and news sentiment, provide insights and
         )
         analysis = chat_completion.choices[0].message.content.strip()
         return analysis
-    except openai.error.OpenAIError as e:
+    except openai.OpenAIError as e:
         return f"AI analysis not available due to an error: {e}"
 
 # Generate and Display AI Insights
@@ -579,7 +579,7 @@ Provide a concise and informative answer.
             )
             answer = response.choices[0].message.content.strip()
             st.write(answer)
-        except openai.error.OpenAIError as e:
+        except openai.OpenAIError as e:
             st.error(f"Error generating answer: {e}")
 
 # Risk Assessment Analysis
@@ -607,7 +607,7 @@ Consider market conditions, volatility, and news sentiment in your assessment.
         )
         assessment = response.choices[0].message.content.strip()
         return assessment
-    except openai.error.OpenAIError as e:
+    except openai.OpenAIError as e:
         return f"Risk assessment not available due to an error: {e}"
 
 # Display Risk Assessment
