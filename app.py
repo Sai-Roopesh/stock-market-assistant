@@ -101,11 +101,11 @@ def get_user_input():
 
 def get_stock_symbol(company_name):
     """Use OpenAI API to get the stock symbol for a given company name."""
-    prompt = f"What is the stock ticker symbol for {company_name}?, Only return the symbol and nothing else."
+    prompt = f"What is the stock ticker symbol for {company_name}?, Only return the correct symbol and nothing else."
 
     try:
         response = client.chat.completions.create(
-            model="GPT-4o mini",
+            model="GPT-4o",
             messages=[
                 {"role": "system", "content": "You are a financial assistant that knows stock ticker symbols."},
                 {"role": "user", "content": prompt}
@@ -113,7 +113,9 @@ def get_stock_symbol(company_name):
             max_tokens=10,
             temperature=0,
         )
+        print(response)
         symbol = response.choices[0].message.content.strip().upper()
+        print(symbol)
         # Validate if the symbol is correct by attempting to fetch data
         data = yf.download(symbol, period='1d')
         if data.empty:
