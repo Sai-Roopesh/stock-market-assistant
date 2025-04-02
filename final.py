@@ -8,7 +8,6 @@ import streamlit as st
 from datetime import datetime, timedelta
 import nltk
 from dotenv import load_dotenv
-import openai
 import numpy as np
 import pandas as pd
 import yfinance as yf
@@ -21,6 +20,9 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestRegressor
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from streamlit_autorefresh import st_autorefresh  # ensure it's installed
+
+# Import the OpenAI client (used to access Gemini now)
+from openai import OpenAI
 
 # Make sure NLTK data is available
 try:
@@ -75,19 +77,23 @@ except Exception as e:
     st.error(f"Error downloading NLTK data: {e}")
 
 NEWSAPI_KEY = os.getenv("NEWSAPI_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")  # Use your Gemini API key
 
 if not NEWSAPI_KEY:
     st.error("NewsAPI Key not found. Please set it in the .env file.")
     logger.error("NewsAPI Key not found in environment variables.")
     st.stop()
 
-if not OPENAI_API_KEY:
-    st.error("OpenAI API Key not found. Please set it in the .env file.")
-    logger.error("OpenAI API Key not found in environment variables.")
+if not GEMINI_API_KEY:
+    st.error("Gemini API Key not found. Please set it in the .env file.")
+    logger.error("Gemini API Key not found in environment variables.")
     st.stop()
 
-openai.api_key = OPENAI_API_KEY
+# Initialize the Gemini client (via the OpenAI libraries)
+client = OpenAI(
+    api_key=GEMINI_API_KEY,
+    base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+)
 
 # Initialize NewsAPI client
 try:
@@ -99,6 +105,50 @@ except Exception as e:
     st.stop()
 
 
+def display_sector_heatmap():
+    """Fetch recent performance for a few key sector ETFs and display a bar chart."""
+    # Define a few common sector ETFs.
+    sectors = {
+        "Financials": "XLF",
+        "Healthcare": "XLV",
+        "Technology": "XLK",
+        "Consumer Discretionary": "XLY",
+        "Industrials": "XLI",
+        "Energy": "XLE",
+        "Utilities": "XLU",
+        "Materials": "XLB",
+        "Real Estate": "XLRE"
+    }
+    performance = {}
+    for sector, etf in sectors.items():
+        data = yf.download(etf, period="1mo", progress=False)
+        if not data.empty:
+            close = data['Close']
+            # If the 'Close' column is a DataFrame (due to multi-index), use the first column.
+            if isinstance(close, pd.DataFrame):
+                close = close.iloc[:, 0]
+            pct_change = (close.iloc[-1] - close.iloc[0]) / close.iloc[0] * 100
+            performance[sector] = pct_change
+        else:
+            performance[sector] = None
+    df_perf = pd.DataFrame(list(performance.items()), columns=[
+                           "Sector", "1-Month % Change"])
+    fig = px.bar(
+        df_perf,
+        x="Sector",
+        y="1-Month % Change",
+        title="Sector Performance (1-Month % Change)",
+        color="1-Month % Change",
+        color_continuous_scale='RdYlGn'
+    )
+    st.plotly_chart(fig, use_container_width=True, key="sector_heatmap")
+
+
+def tooltip_metric(label, value, tooltip):
+    """Return HTML for a metric with an educational tooltip."""
+    return f'<span title="{tooltip}"><b>{label}</b>: {value}</span>'
+
+
 # --- EnhancedStockAnalyzer Class ---
 class EnhancedStockAnalyzer:
     def __init__(self, logger):
@@ -108,8 +158,8 @@ class EnhancedStockAnalyzer:
     def load_api_keys(self):
         try:
             self.NEWSAPI_KEY = os.getenv('NEWSAPI_KEY')
-            self.OPENAI_KEY = os.getenv('OPENAI_API_KEY')
-            if not all([self.NEWSAPI_KEY, self.OPENAI_KEY]):
+            self.GEMINI_KEY = os.getenv("GEMINI_API_KEY")
+            if not all([self.NEWSAPI_KEY, self.GEMINI_KEY]):
                 raise ValueError("Missing API keys")
         except Exception as e:
             self.logger.error(f"API Key Configuration Error: {e}")
@@ -140,7 +190,6 @@ class EnhancedStockAnalyzer:
 
                 # Check if the DataFrame has MultiIndex columns:
                 if isinstance(df.columns, pd.MultiIndex):
-                    # Expect the second level to match the ticker
                     if ('Adj Close', stock) in df.columns:
                         close_series = df[('Adj Close', stock)]
                     else:
@@ -364,6 +413,86 @@ class EnhancedStockAnalyzer:
             st.error(f"Error during ESG scoring: {e}")
             return None
 
+    def get_earnings_calendar(self, symbol):
+        """Retrieve and display the earnings calendar for a given stock using yfinance."""
+        try:
+            ticker = yf.Ticker(symbol)
+            cal = ticker.calendar  # May be a DataFrame or dictionary
+
+            self.logger.info(
+                f"Earnings calendar for {symbol} retrieved: {cal}")
+
+            # If cal is a DataFrame:
+            if isinstance(cal, pd.DataFrame):
+                if not cal.empty:
+                    st.write(f"### {symbol} Earnings Calendar")
+                    st.dataframe(cal)
+                    return cal
+                else:
+                    st.warning("No earnings calendar data available.")
+                    return None
+
+            # If cal is a dictionary:
+            if cal and isinstance(cal, dict) and len(cal) > 0:
+                processed_data = []
+                for event, date_val in cal.items():
+                    # Ensure date_val is a list
+                    if not isinstance(date_val, list):
+                        date_val = [date_val] if date_val is not None else []
+                    valid_dates = []
+                    for d in date_val:
+                        try:
+                            if isinstance(d, (datetime.date, datetime.datetime)):
+                                valid_dates.append(d)
+                            elif isinstance(d, str):
+                                valid_dates.append(pd.to_datetime(d).date())
+                        except Exception:
+                            continue
+                    processed_data.append(
+                        {'Event': event, 'Date': valid_dates})
+                df_cal = pd.DataFrame(processed_data)
+                df_cal = df_cal[df_cal['Date'].apply(len) > 0]
+                if not df_cal.empty:
+                    df_cal = df_cal.explode('Date').reset_index(drop=True)
+                    df_cal['Date'] = pd.to_datetime(
+                        df_cal['Date']).dt.strftime('%Y-%m-%d')
+                    df_cal = df_cal.sort_values('Date')
+                    st.write(f"### {symbol} Earnings Calendar")
+                    st.dataframe(df_cal.style.set_properties(
+                        **{'text-align': 'left', 'white-space': 'pre-wrap'}))
+                    return df_cal
+
+            st.warning("No earnings calendar data available.")
+            return None
+
+        except Exception as e:
+            self.logger.error(
+                f"Error retrieving earnings calendar for {symbol}: {e}")
+            st.error(
+                f"Error retrieving earnings calendar for {symbol}: {str(e)}")
+            return None
+
+    def get_dividend_history(self, symbol):
+        """Retrieve and visualize dividend history using yfinance."""
+        try:
+            ticker = yf.Ticker(symbol)
+            dividends = ticker.dividends
+            if dividends.empty:
+                st.warning("No dividend data available.")
+                return None
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=dividends.index, y=dividends.values, mode='lines+markers', name='Dividend'))
+            fig.update_layout(
+                title=f"{symbol} Dividend History", xaxis_title="Date", yaxis_title="Dividend")
+            st.plotly_chart(fig, use_container_width=True, key="dividend")
+            return dividends
+        except Exception as e:
+            self.logger.error(
+                f"Error retrieving dividend history for {symbol}: {e}")
+            st.error(f"Error retrieving dividend history for {symbol}: {e}")
+            return None
+
 
 analyzer = EnhancedStockAnalyzer(logger=logger)
 st.set_page_config(
@@ -414,8 +543,8 @@ st.sidebar.header('🔍 Analysis Parameters')
 def get_stock_symbol(company_name):
     prompt = f"What is the stock ticker symbol for {company_name}? Only return the symbol and nothing else."
     try:
-        response = openai.chat.completions.create(
-            model="gpt-3.5-turbo",
+        response = client.chat.completions.create(
+            model="gemini-2.0-flash-lite",
             messages=[
                 {
                     "role": "system",
@@ -431,30 +560,19 @@ def get_stock_symbol(company_name):
         if data.empty:
             return None
         return symbol
-    except openai.OpenAIError as e:
-        logger.error(f"OpenAI API error while fetching stock symbol: {e}")
-        st.error(f"Error getting stock symbol: {e}")
-        return None
     except Exception as e:
-        logger.exception(f"Unexpected error while fetching stock symbol: {e}")
-        st.error(f"Unexpected error: {e}")
+        logger.error(f"Gemini API error while fetching stock symbol: {e}")
+        st.error(f"Error getting stock symbol: {e}")
         return None
 
 
 def get_user_input():
     company_input = st.sidebar.text_input(
         'Company Name or Stock Symbol', 'Apple Inc.')
-    date_ranges = {
-        '1 Week': 7,
-        '1 Month': 30,
-        '3 Months': 90,
-        '6 Months': 180,
-        '1 Year': 365,
-        'Custom': 0
-    }
+    date_ranges = {'1 Week': 7, '1 Month': 30, '3 Months': 90,
+                   '6 Months': 180, '1 Year': 365, 'Custom': 0}
     selected_range = st.sidebar.selectbox(
-        'Select Time Range', list(date_ranges.keys())
-    )
+        'Select Time Range', list(date_ranges.keys()))
     if selected_range == 'Custom':
         start_date = st.sidebar.date_input(
             'Start Date', datetime.today() - timedelta(days=365))
@@ -479,12 +597,9 @@ def get_user_input():
     strategy = ""
     if run_portfolio:
         portfolio_input = st.sidebar.text_input(
-            "Enter stock symbols or company names (comma-separated)",
-            "AAPL, GOOGL, MSFT"
-        )
+            "Enter stock symbols or company names (comma-separated)", "AAPL, GOOGL, MSFT")
         initial_investment = st.sidebar.number_input(
-            "Initial Investment", min_value=1000, value=10000
-        )
+            "Initial Investment", min_value=1000, value=10000)
         strategy = st.sidebar.selectbox(
             "Investment Strategy", ["Equal Weight", "Market Cap Weighted"])
 
@@ -492,9 +607,7 @@ def get_user_input():
     correlation_input = ""
     if run_correlation:
         correlation_input = st.sidebar.text_input(
-            "Enter stock symbols or company names for Correlation Analysis (comma-separated)",
-            "AAPL, GOOGL, MSFT"
-        )
+            "Enter stock symbols or company names for Correlation Analysis (comma-separated)", "AAPL, GOOGL, MSFT")
 
     run_ml = st.sidebar.checkbox("ML Price Prediction")
     ml_input = ""
@@ -508,6 +621,14 @@ def get_user_input():
         esg_input = st.sidebar.text_input(
             "Enter stock symbol for ESG Analysis", "AAPL")
 
+    # New feature checkboxes:
+    show_earnings = st.sidebar.checkbox("Show Earnings Calendar")
+    show_dividends = st.sidebar.checkbox("Show Dividend History")
+    show_sector = st.sidebar.checkbox("Show Sector Heatmap")
+    interactive_corr = st.sidebar.checkbox(
+        "Use Interactive Correlation Matrix", True)
+    show_tooltips = st.sidebar.checkbox("Enable Educational Tooltips", True)
+
     submitted = st.sidebar.button('Submit')
     logger.info("User input retrieved from sidebar.")
     return (
@@ -516,6 +637,7 @@ def get_user_input():
         run_correlation, correlation_input,
         run_ml, ml_input,
         run_esg, esg_input,
+        show_earnings, show_dividends, show_sector, interactive_corr, show_tooltips,
         submitted
     )
 
@@ -605,10 +727,7 @@ def load_stock_data(symbol, start, end, retries=3, delay=2):
             raw_data = yf.download(symbol, start=start,
                                    end=end, progress=False)
             if not raw_data.empty:
-                # Just like in app.py, we build single columns
-                # If columns are multi-index, pick the column for the given symbol
                 if isinstance(raw_data.columns, pd.MultiIndex):
-                    # We'll assume you're only dealing with 1 symbol, so build a new DataFrame
                     df = pd.DataFrame({
                         'Date': raw_data.index,
                         'Open':   raw_data[('Open',   symbol)],
@@ -618,9 +737,7 @@ def load_stock_data(symbol, start, end, retries=3, delay=2):
                         'Volume': raw_data[('Volume', symbol)]
                     })
                 else:
-                    # No multi-index, columns are already single-level
                     df = raw_data.reset_index()
-                    # Make sure columns are named the same
                     df.rename(
                         columns={
                             'Date': 'Date',
@@ -633,7 +750,6 @@ def load_stock_data(symbol, start, end, retries=3, delay=2):
                         inplace=True,
                         errors='ignore'
                     )
-                # Finally reset index
                 df.reset_index(drop=True, inplace=True)
                 return df
             else:
@@ -681,7 +797,6 @@ def analyze_sentiment(articles):
         avg_sentiment = sum(sentiments) / len(sentiments)
     else:
         avg_sentiment = 0
-    # Make daily sentiment
     date_sent_dict = {}
     for article in articles:
         date_str = article.get('publishedAt', '')[:10]
@@ -722,8 +837,8 @@ def load_news(symbol, from_date, to_date):
 def summarize_article(text):
     prompt = f"Summarize this news article in 2-3 sentences:\n\n{text}"
     try:
-        response = openai.chat.completions.create(
-            model="gpt-3.5-turbo",
+        response = client.chat.completions.create(
+            model="gemini-2.0-flash",
             messages=[
                 {
                     "role": "system",
@@ -735,11 +850,8 @@ def summarize_article(text):
             temperature=0.5
         )
         return response.choices[0].message.content.strip()
-    except openai.OpenAIError as e:
-        logger.error(f"OpenAI error summarizing article: {e}")
-        return "Summary not available."
     except Exception as e:
-        logger.exception(f"Error summarizing article: {e}")
+        logger.error(f"Gemini API error summarizing article: {e}")
         return "Summary not available."
 
 
@@ -782,8 +894,8 @@ Based on this data, discuss factors that may influence {symbol}'s future outlook
 """
 
     try:
-        response = openai.chat.completions.create(
-            model="gpt-4",
+        response = client.chat.completions.create(
+            model="gemini-2.0-flash",
             messages=[
                 {
                     "role": "system",
@@ -795,12 +907,9 @@ Based on this data, discuss factors that may influence {symbol}'s future outlook
             temperature=0.7
         )
         return response.choices[0].message.content.strip()
-    except openai.OpenAIError as e:
-        logger.error(f"OpenAI error generating AI insights: {e}")
-        return f"AI analysis not available. Error: {e}"
     except Exception as e:
-        logger.exception(f"Error generating AI insights: {e}")
-        return f"AI analysis not available due to an unexpected error: {e}"
+        logger.error(f"Gemini API error generating AI insights: {e}")
+        return f"AI analysis not available due to an error: {e}"
 
 
 def generate_risk_assessment(symbol, df, avg_sentiment):
@@ -812,8 +921,8 @@ def generate_risk_assessment(symbol, df, avg_sentiment):
 Consider market conditions, volatility, and sentiment.
 """
     try:
-        response = openai.chat.completions.create(
-            model="gpt-3.5-turbo",
+        response = client.chat.completions.create(
+            model="gemini-2.0-flash",
             messages=[
                 {
                     "role": "system",
@@ -825,11 +934,8 @@ Consider market conditions, volatility, and sentiment.
             temperature=0.7
         )
         return response.choices[0].message.content.strip()
-    except openai.OpenAIError as e:
-        logger.error(f"OpenAI error generating risk assessment: {e}")
-        return f"Risk assessment not available. Error: {e}"
     except Exception as e:
-        logger.exception(f"Error generating risk assessment: {e}")
+        logger.error(f"Gemini API error generating risk assessment: {e}")
         return f"Risk assessment not available due to error: {e}"
 
 
@@ -852,7 +958,11 @@ inputs = get_user_input()
 (
     company_input, start_date, end_date, show_sma, show_rsi, show_macd, show_bollinger,
     prediction_days, run_portfolio, portfolio_input, initial_investment, strategy,
-    run_correlation, correlation_input, run_ml, ml_input, run_esg, esg_input, submitted
+    run_correlation, correlation_input,
+    run_ml, ml_input,
+    run_esg, esg_input,
+    show_earnings, show_dividends, show_sector, interactive_corr, show_tooltips,
+    submitted
 ) = inputs
 
 if submitted:
@@ -920,6 +1030,8 @@ if submitted:
                 esg_results = analyzer.esg_scoring(esg_symbol)
                 st.session_state['esg_results'] = esg_results
 
+else:
+    st.write("Please enter parameters and click Submit.")
 
 # Retrieve from session state
 stock_data = st.session_state['stock_data']
@@ -1079,9 +1191,9 @@ if st.session_state['submitted'] and stock_data is not None and stock_info is no
     st.subheader("🤖 AI-Powered Analysis and Outlook")
     with st.spinner("Generating AI insights..."):
         ai_insights = generate_ai_insights(
-            stock_symbol, tech_data, news_articles, patterns, stock_info, avg_sentiment
-        )
-    st.write(ai_insights)
+            stock_symbol, tech_data, news_articles, patterns, stock_info, avg_sentiment)
+    with st.expander("View Full AI Analysis"):
+        st.markdown(ai_insights)
 
     st.header("📈 Prophet Forecast")
     if st.button("Predict Future Prices"):
@@ -1123,14 +1235,42 @@ if st.session_state['submitted'] and stock_data is not None and stock_info is no
     user_q = st.text_input("Your question about the stock:")
     if st.button("Get Answer"):
         if user_q:
-            prompt = f"""You are a financial assistant. Based on the data, answer:
-Question: {user_q}
-Provide a concise answer.
-"""
+            # Build a summary from fetched data.
+            current_price = stock_info.get('currentPrice', 'N/A')
+            market_cap = stock_info.get('marketCap', 'N/A')
+            pe_ratio = stock_info.get('trailingPE', 'N/A')
+            # Get recent news headlines (limit to 3 for brevity)
+            news_headlines = " | ".join(
+                [article['title'] for article in news_articles[:3]])
+            # Get current RSI if available
+            try:
+                current_rsi = tech_data['RSI'].iloc[-1]
+                rsi_text = f"{current_rsi:.2f}"
+            except Exception:
+                rsi_text = "N/A"
+
+            # Create a summary string with key information.
+            data_summary = (
+                f"Current Price: ${current_price}\n"
+                f"Market Cap: {market_cap}\n"
+                f"P/E Ratio: {pe_ratio}\n"
+                f"RSI: {rsi_text}\n"
+                f"Recent News Headlines: {news_headlines}"
+            )
+
+            prompt = f"""You are a financial assistant with comprehensive stock data for {stock_symbol}.
+    The following data is available:
+    {data_summary}
+
+    Based on the above data, please answer the following question:
+    Question: {user_q}
+
+    Provide a concise answer.
+    """
             with st.spinner("Generating answer..."):
                 try:
-                    resp = openai.chat.completions.create(
-                        model="gpt-3.5-turbo",
+                    resp = client.chat.completions.create(
+                        model="gemini-2.0-flash",
                         messages=[
                             {"role": "system",
                                 "content": "You are a helpful financial assistant."},
@@ -1139,9 +1279,11 @@ Provide a concise answer.
                         max_tokens=200,
                         temperature=0.7
                     )
-                    st.write(resp.choices[0].message.content.strip())
-                except openai.OpenAIError as e:
-                    st.error(f"OpenAI error: {e}")
+                    answer = resp.choices[0].message.content.strip()
+                    with st.expander("View Answer"):
+                        st.markdown(answer)
+                except Exception as e:
+                    st.error(f"Gemini API error: {e}")
         else:
             st.warning("Please enter a question first.")
 
@@ -1237,6 +1379,18 @@ Provide a concise answer.
         fig_esg.update_layout(title="ESG Performance",
                               yaxis_title="Score", template="plotly_white")
         st.plotly_chart(fig_esg, use_container_width=True, key='11')
+
+    # New Feature: Earnings Calendar
+    if show_earnings:
+        analyzer.get_earnings_calendar(stock_symbol)
+
+    # New Feature: Dividend History
+    if show_dividends:
+        analyzer.get_dividend_history(stock_symbol)
+
+    # New Feature: Sector Heatmap
+    if show_sector:
+        display_sector_heatmap()
 
 else:
     st.write("Please enter parameters and click Submit.")

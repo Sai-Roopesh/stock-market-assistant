@@ -304,14 +304,42 @@ if submitted:
         try:
             logger.info(
                 f"Fetching stock data for symbol '{symbol}' from {start} to {end}.")
-            data = yf.download(symbol, start=start, end=end)
-            if data.empty:
+            raw_data = yf.download(symbol, start=start, end=end)
+
+            # Log info about the downloaded data
+            logger.info(
+                f"Type of raw_data['Close']: {type(raw_data['Close'])}")
+            logger.info(
+                f"Shape of raw_data['Close']: {raw_data['Close'].shape}")
+            logger.info(f"Columns of raw_data: {raw_data.columns}")
+            logger.info(
+                f"Is raw_data.columns a MultiIndex? {isinstance(raw_data.columns, pd.MultiIndex)}")
+
+            if raw_data.empty:
                 logger.warning(
                     f"No data found for symbol '{symbol}' in the specified date range.")
                 return None
-            data.reset_index(inplace=True)
-            logger.info(f"Successfully fetched stock data for '{symbol}'.")
-            return data
+
+            # --- PICK THE SINGLE TICKER COLUMNS DIRECTLY ---
+            # Because columns are e.g. ('Close','AAPL'), ('Open','AAPL'), etc.
+            # We'll build a new DataFrame "df" with single-level column names.
+            df = pd.DataFrame({
+                'Date': raw_data.index,                           # index becomes 'Date' column
+                # or raw_data[('Open','AAPL')]
+                'Open':   raw_data[('Open',   symbol)],
+                'High':   raw_data[('High',   symbol)],
+                'Low':    raw_data[('Low',    symbol)],
+                'Close':  raw_data[('Close',  symbol)],
+                'Volume': raw_data[('Volume', symbol)]
+            })
+
+            # Reset index so 'Date' is an actual column
+            df.reset_index(drop=True, inplace=True)
+            logger.info(
+                f"Successfully fetched single-column data for '{symbol}'. Columns now: {df.columns.tolist()}")
+
+            return df
+
         except Exception as e:
             logger.exception(f"Error fetching data for '{symbol}': {e}")
             st.error(f"Error fetching data for {symbol}: {e}")
