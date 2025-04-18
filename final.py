@@ -714,19 +714,24 @@ def analyze_patterns(df):
     return patterns
 
 
-def load_stock_data(symbol, start, end, retries=3, delay=2):
+def load_stock_data(symbol, start, end, exchange=None, retries=3, delay=2):
     """
-    Download stock data from Yahoo Finance with single-column flattening.
+    Download stock data from Yahoo Finance with exchange handling.
     """
     logger.info(
         f"[load_stock_data] Requesting data for '{symbol}' from {start} to {end}")
     for attempt in range(1, retries + 1):
         try:
+            if exchange:
+                ticker = f"{symbol}.{exchange}"
+            else:
+                ticker = symbol
+
             logger.info(
-                f"[load_stock_data] Attempt {attempt}/{retries} for '{symbol}'")
-            raw_data = yf.download(symbol, start=start,
+                f"[load_stock_data] Attempt {attempt}/{retries} for '{ticker}'")
+            raw_data = yf.download(ticker, start=start,
                                    end=end, progress=False)
-            if not raw_data.empty:
+            if not raw_data.empty and isinstance(raw_data, pd.DataFrame):
                 if isinstance(raw_data.columns, pd.MultiIndex):
                     df = pd.DataFrame({
                         'Date': raw_data.index,
@@ -754,19 +759,21 @@ def load_stock_data(symbol, start, end, retries=3, delay=2):
                 return df
             else:
                 logger.warning(
-                    f"[load_stock_data] No data returned for '{symbol}' on attempt {attempt}.")
+                    f"[load_stock_data] No data returned for '{ticker}' on attempt {attempt}.")
         except JSONDecodeError as jde:
             logger.error(
                 f"[load_stock_data] JSON decode error on attempt {attempt}: {jde}")
         except RequestException as re:
             logger.error(
                 f"[load_stock_data] Request error on attempt {attempt}: {re}")
+        except ValueError as ve:
+            logger.error(f"[load_stock_data] ValueError on attempt {attempt} for '{ticker}': {ve}")
         except Exception as e:
             logger.exception(
-                f"[load_stock_data] General error for '{symbol}' on attempt {attempt}: {e}")
+                f"[load_stock_data] General error for '{ticker}' on attempt {attempt}: {e}")
         time.sleep(delay)
     logger.error(
-        f"[load_stock_data] Failed to retrieve data for '{symbol}' after {retries} attempts.")
+        f"[load_stock_data] Failed to retrieve data for '{ticker}' after {retries} attempts.")
     return None
 
 

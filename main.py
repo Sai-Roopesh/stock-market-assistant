@@ -412,7 +412,16 @@ st.sidebar.header('🔍 Analysis Parameters')
 
 @st.cache_data(show_spinner=False)
 def get_stock_symbol(company_name):
-    prompt = f"What is the stock ticker symbol for {company_name}? Only return the symbol and nothing else."
+    prompt = f"""
+    For {company_name}, provide the stock ticker symbol and the exchange where it is traded.
+    Return your response in JSON format with keys "symbol" and "exchange".
+    If you can't find the exchange, return null for exchange.
+    Example:
+    {{
+        "symbol": "AAPL",
+        "exchange": "NASDAQ"
+    }}
+    """
     try:
         response = openai.chat.completions.create(
             model="gpt-3.5-turbo",
@@ -426,11 +435,22 @@ def get_stock_symbol(company_name):
             max_tokens=10,
             temperature=0
         )
-        symbol = response.choices[0].message.content.strip().upper()
+        try:
+            import json
+            response_json = json.loads(response.choices[0].message.content.strip())
+            symbol = response_json.get("symbol")
+            exchange = response_json.get("exchange")
+            if not symbol:
+                return None, None
+            if exchange is None:
+                exchange = None
+            symbol = symbol.upper()
+        except (json.JSONDecodeError, KeyError):
+            return None, None
         data = yf.download(symbol, period='1d')
         if data.empty:
-            return None
-        return symbol
+            return None, None
+        return symbol, exchange
     except openai.OpenAIError as e:
         logger.error(f"OpenAI API error while fetching stock symbol: {e}")
         st.error(f"Error getting stock symbol: {e}")
@@ -839,12 +859,14 @@ def process_multiple_inputs(input_str):
     items = [x.strip() for x in input_str.split(',')]
     valid_symbols = []
     for item in items:
-        symbol = get_stock_symbol(item)
-        if symbol:
-            valid_symbols.append(symbol)
+        symbol, _ = get_stock_symbol(item)
+        if symbol is not None:
+            valid_symbols.append(symbol) 
         else:
             st.warning(f"Could not resolve symbol for: {item}")
     return valid_symbols
+
+
 
 
 # Collect user inputs

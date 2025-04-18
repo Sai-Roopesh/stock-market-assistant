@@ -2,6 +2,7 @@
 myenv/
 venv/
 .env
+.venv/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -83,3 +84,8 @@ docker-compose.yml
 
 # Ignore git metadata
 .git/
+
+#Ignore 
+.idx/
+
+.devcontainer/
